@@ -36,7 +36,14 @@
       "Bash(do if [ -s \"$f\" ])",
       "Bash(fi)",
       "Bash(done)",
-      "Bash(./test_thread_safety.sh:*)"
+      "Bash(./test_thread_safety.sh:*)",
+      "Bash(./test_demo_concept.sh:*)",
+      "Bash(./run_demo_auto.sh:*)",
+      "Bash(./show_demo_workflow.sh:*)",
+      "Bash(./demo_health_check.sh:*)",
+      "Bash(./demo_cleanup.sh:*)",
+      "Bash(bash:*)",
+      "Bash(./run_clean_demo.sh:*)"
     ],
     "deny": []
   }

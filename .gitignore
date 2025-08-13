@@ -3,23 +3,41 @@ build/
 *.o
 *.a
 *.so
+*.out
 
-# Certificates and keys
+# Executables (if built in root)
+secure_server
+secure_client
+test_pure_ib
+
+# Security - Never commit these!
 *.key
 *.crt
 *.pem
+*.csr
+server.key
+server.crt
 
 # Log files
 *.log
 logs/
+demo_logs/
+client_logs/
+thread_test_logs/
+test_server.log
+test_client*.log
+
+# Test artifacts
+test_results.txt
+demo_results.txt
+thread_safety_report.txt
+psn_analysis.txt
+*.pid
 
 # Core dumps
 core
 core.*
-
-# Test results
-test_results/
-*_results_*.txt
+vgcore.*
 
 # Editor files
 *.swp
@@ -27,7 +45,24 @@ test_results/
 *~
 .vscode/
 .idea/
+*.code-workspace
 
 # Temporary files
 *.tmp
 /tmp/
+.DS_Store
+Thumbs.db
+
+# Coverage and debug
+*.gcov
+*.gcda
+*.gcno
+coverage/
+
+# Backup files
+*.bak
+*.orig
+
+# Python cache (if any)
+__pycache__/
+*.pyc

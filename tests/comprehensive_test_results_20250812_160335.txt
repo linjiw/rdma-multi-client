@@ -1,0 +1,20 @@
+[0;35m════════════════════════════════════════════════════════════════
+     COMPREHENSIVE SECURE RDMA VALIDATION TEST SUITE
+     Date: Tue Aug 12 16:03:35 UTC 2025
+     Hostname: ip-172-31-34-15
+════════════════════════════════════════════════════════════════[0m
+
+[0;36m═══ PHASE 1: ENVIRONMENT VALIDATION ═══[0m
+    rxe0            	048db5fffe1fc7f1
+			state:			PORT_ACTIVE (4)
+rdma_rxe              135168  0
+ib_uverbs             167936  2 rdma_rxe,rdma_ucm
+ip6_udp_tunnel         16384  1 rdma_rxe
+udp_tunnel             20480  1 rdma_rxe
+ib_core               393216  8 rdma_cm,rdma_rxe,rpcrdma,iw_cm,ib_iser,rdma_ucm,ib_uverbs,ib_cm
+	librdmacm.so.1 (libc6,x86-64) => /lib/x86_64-linux-gnu/librdmacm.so.1
+	librdmacm.so (libc6,x86-64) => /lib/x86_64-linux-gnu/librdmacm.so
+	libibverbs.so.1 (libc6,x86-64) => /lib/x86_64-linux-gnu/libibverbs.so.1
+	libibverbs.so (libc6,x86-64) => /lib/x86_64-linux-gnu/libibverbs.so
+
+[0;36m═══ PHASE 2: BUILD VALIDATION ═══[0m

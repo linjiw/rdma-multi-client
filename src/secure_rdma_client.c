@@ -27,11 +27,12 @@ struct client_context {
     uint32_t local_psn;
     uint32_t remote_psn;
     
-    // RDMA resources
-    struct rdma_event_channel *ec;
-    struct rdma_cm_id *cm_id;
+    // RDMA resources - pure IB verbs
+    struct ibv_context *ctx;      // IB device context
     struct ibv_pd *pd;
     struct ibv_qp *qp;
+    struct ibv_cq *send_cq;
+    struct ibv_cq *recv_cq;
     struct ibv_mr *send_mr;
     struct ibv_mr *recv_mr;
     char *send_buffer;
@@ -66,9 +67,8 @@ static int init_rdma_resources(struct client_context *client) {
         return -1;
     }
     
-    // Protection domain and QP are created by rdma_create_qp
-    client->pd = client->cm_id->pd;
-    client->qp = client->cm_id->qp;
+    // With pure IB verbs, PD and QP are already created directly
+    // No need to get them from cm_id
     
     // Register memory regions
     client->send_mr = ibv_reg_mr(client->pd, client->send_buffer, BUFFER_SIZE,
@@ -90,9 +90,9 @@ static int setup_qp_with_psn(struct client_context *client) {
     struct ibv_qp_attr attr;
     int flags;
     
-    // Get port attributes
+    // Get port attributes (use port 1 as default)
     struct ibv_port_attr port_attr;
-    if (ibv_query_port(client->cm_id->verbs, client->cm_id->port_num, &port_attr)) {
+    if (ibv_query_port(client->ctx, 1, &port_attr)) {
         perror("ibv_query_port");
         return -1;
     }
@@ -105,9 +105,8 @@ static int setup_qp_with_psn(struct client_context *client) {
     local_params.rkey = client->recv_mr->rkey;
     local_params.remote_addr = (uint64_t)client->recv_buffer;
     
-    // Query GID
-    if (ibv_query_gid(client->cm_id->verbs, client->cm_id->port_num,
-                     0, (union ibv_gid*)local_params.gid)) {
+    // Query GID (use port 1, index 0)
+    if (ibv_query_gid(client->ctx, 1, 0, (union ibv_gid*)local_params.gid)) {
         perror("ibv_query_gid");
         return -1;
     }
@@ -137,7 +136,7 @@ static int setup_qp_with_psn(struct client_context *client) {
     // Step 1: Transition QP to INIT state
     memset(&attr, 0, sizeof(attr));
     attr.qp_state = IBV_QPS_INIT;
-    attr.port_num = client->cm_id->port_num;
+    attr.port_num = 1;  // Use port 1 (default for first port)
     attr.pkey_index = 0;
     attr.qp_access_flags = IBV_ACCESS_LOCAL_WRITE | 
                           IBV_ACCESS_REMOTE_READ |
@@ -165,7 +164,7 @@ static int setup_qp_with_psn(struct client_context *client) {
     attr.ah_attr.dlid = client->remote_params.lid;
     attr.ah_attr.sl = 0;
     attr.ah_attr.src_path_bits = 0;
-    attr.ah_attr.port_num = client->cm_id->port_num;
+    attr.ah_attr.port_num = 1;  // Use port 1
     
     // If using RoCE (Ethernet), setup GID
     if (port_attr.link_layer == IBV_LINK_LAYER_ETHERNET) {
@@ -255,7 +254,7 @@ static int send_message(struct client_context *client, const char *message) {
     }
     
     // Wait for completion
-    while (ibv_poll_cq(client->cm_id->send_cq, 1, &wc) == 0);
+    while (ibv_poll_cq(client->send_cq, 1, &wc) == 0);
     
     if (wc.status != IBV_WC_SUCCESS) {
         fprintf(stderr, "Send failed with status: %s\n",
@@ -272,7 +271,7 @@ static int receive_message(struct client_context *client) {
     struct ibv_wc wc;
     
     // Poll for completion
-    while (ibv_poll_cq(client->cm_id->recv_cq, 1, &wc) == 0) {
+    while (ibv_poll_cq(client->recv_cq, 1, &wc) == 0) {
         if (!client->running) return -1;
         usleep(1000);
     }
@@ -317,7 +316,7 @@ static int rdma_write_to_server(struct client_context *client, const char *data)
     }
     
     // Wait for completion
-    while (ibv_poll_cq(client->cm_id->send_cq, 1, &wc) == 0);
+    while (ibv_poll_cq(client->send_cq, 1, &wc) == 0);
     
     if (wc.status != IBV_WC_SUCCESS) {
         fprintf(stderr, "RDMA write failed with status: %s\n",
@@ -329,103 +328,86 @@ static int rdma_write_to_server(struct client_context *client, const char *data)
     return 0;
 }
 
-// Connect to server
-static int connect_to_server(struct client_context *client, 
-                            const char *server_addr, int rdma_port) {
-    struct rdma_cm_event *event;
-    struct sockaddr_in addr;
-    // conn_param not needed since we don't use rdma_connect()
+// Create RDMA resources using pure IB verbs (no RDMA CM)
+static int create_rdma_resources(struct client_context *client) {
+    struct ibv_device **dev_list;
+    int num_devices;
     
-    // Create event channel
-    client->ec = rdma_create_event_channel();
-    if (!client->ec) {
-        perror("rdma_create_event_channel");
+    // Get device list
+    dev_list = ibv_get_device_list(&num_devices);
+    if (!dev_list || num_devices == 0) {
+        fprintf(stderr, "No RDMA devices found\n");
         return -1;
     }
     
-    // Create CM ID
-    if (rdma_create_id(client->ec, &client->cm_id, NULL, RDMA_PS_TCP)) {
-        perror("rdma_create_id");
+    printf("Found %d RDMA device(s)\n", num_devices);
+    
+    // Open first device
+    client->ctx = ibv_open_device(dev_list[0]);
+    ibv_free_device_list(dev_list);
+    
+    if (!client->ctx) {
+        fprintf(stderr, "Failed to open RDMA device\n");
         return -1;
     }
     
-    // Resolve address
-    memset(&addr, 0, sizeof(addr));
-    addr.sin_family = AF_INET;
-    addr.sin_port = htons(rdma_port);
-    if (inet_pton(AF_INET, server_addr, &addr.sin_addr) != 1) {
-        fprintf(stderr, "Invalid server address: %s\n", server_addr);
+    printf("Opened RDMA device: %s\n", ibv_get_device_name(client->ctx->device));
+    
+    // Create protection domain
+    client->pd = ibv_alloc_pd(client->ctx);
+    if (!client->pd) {
+        perror("ibv_alloc_pd");
+        ibv_close_device(client->ctx);
         return -1;
     }
     
-    if (rdma_resolve_addr(client->cm_id, NULL, 
-                         (struct sockaddr *)&addr, TIMEOUT_MS)) {
-        perror("rdma_resolve_addr");
+    // Create completion queues
+    client->send_cq = ibv_create_cq(client->ctx, 10, NULL, NULL, 0);
+    client->recv_cq = ibv_create_cq(client->ctx, 10, NULL, NULL, 0);
+    
+    if (!client->send_cq || !client->recv_cq) {
+        fprintf(stderr, "Failed to create CQ\n");
+        if (client->send_cq) ibv_destroy_cq(client->send_cq);
+        if (client->recv_cq) ibv_destroy_cq(client->recv_cq);
+        ibv_dealloc_pd(client->pd);
+        ibv_close_device(client->ctx);
         return -1;
     }
     
-    // Wait for address resolution
-    if (rdma_get_cm_event(client->ec, &event)) {
-        perror("rdma_get_cm_event");
-        return -1;
-    }
-    
-    if (event->event != RDMA_CM_EVENT_ADDR_RESOLVED) {
-        fprintf(stderr, "Unexpected event: %s\n", rdma_event_str(event->event));
-        rdma_ack_cm_event(event);
-        return -1;
-    }
-    rdma_ack_cm_event(event);
-    
-    printf("Address resolved\n");
-    
-    // Resolve route
-    if (rdma_resolve_route(client->cm_id, TIMEOUT_MS)) {
-        perror("rdma_resolve_route");
-        return -1;
-    }
-    
-    // Wait for route resolution
-    if (rdma_get_cm_event(client->ec, &event)) {
-        perror("rdma_get_cm_event");
-        return -1;
-    }
-    
-    if (event->event != RDMA_CM_EVENT_ROUTE_RESOLVED) {
-        fprintf(stderr, "Unexpected event: %s\n", rdma_event_str(event->event));
-        rdma_ack_cm_event(event);
-        return -1;
-    }
-    rdma_ack_cm_event(event);
-    
-    printf("Route resolved\n");
-    
-    // Create QP
+    // Create Queue Pair
     struct ibv_qp_init_attr qp_attr;
     memset(&qp_attr, 0, sizeof(qp_attr));
-    qp_attr.send_cq = ibv_create_cq(client->cm_id->verbs, 10, NULL, NULL, 0);
-    qp_attr.recv_cq = ibv_create_cq(client->cm_id->verbs, 10, NULL, NULL, 0);
+    qp_attr.send_cq = client->send_cq;
+    qp_attr.recv_cq = client->recv_cq;
     qp_attr.qp_type = IBV_QPT_RC;
     qp_attr.cap.max_send_wr = 10;
     qp_attr.cap.max_recv_wr = 10;
     qp_attr.cap.max_send_sge = 1;
     qp_attr.cap.max_recv_sge = 1;
     
-    if (rdma_create_qp(client->cm_id, NULL, &qp_attr)) {
-        perror("rdma_create_qp");
+    client->qp = ibv_create_qp(client->pd, &qp_attr);
+    if (!client->qp) {
+        perror("ibv_create_qp");
+        ibv_destroy_cq(client->send_cq);
+        ibv_destroy_cq(client->recv_cq);
+        ibv_dealloc_pd(client->pd);
+        ibv_close_device(client->ctx);
         return -1;
     }
     
-    // Initialize resources
+    printf("Created QP with QPN: %d\n", client->qp->qp_num);
+    
+    // Initialize buffers and memory regions
     if (init_rdma_resources(client) < 0) {
+        ibv_destroy_qp(client->qp);
+        ibv_destroy_cq(client->send_cq);
+        ibv_destroy_cq(client->recv_cq);
+        ibv_dealloc_pd(client->pd);
+        ibv_close_device(client->ctx);
         return -1;
     }
     
-    // We don't use rdma_connect() because it automatically transitions QP to RTS
-    // and we need to set custom PSN values during the transition
-    // The actual connection will be established via manual QP transitions in setup_qp_with_psn()
-    
-    printf("RDMA resources initialized\n");
+    printf("RDMA resources created successfully\n");
     client->connected = 1;
     
     return 0;
@@ -497,25 +479,12 @@ static void cleanup_client(struct client_context *client) {
     if (client->send_mr) ibv_dereg_mr(client->send_mr);
     if (client->recv_mr) ibv_dereg_mr(client->recv_mr);
     
-    if (client->cm_id) {
-        if (client->connected) {
-            rdma_disconnect(client->cm_id);
-        }
-        if (client->qp) {
-            ibv_destroy_qp(client->qp);
-        }
-        if (client->cm_id->send_cq) {
-            ibv_destroy_cq(client->cm_id->send_cq);
-        }
-        if (client->cm_id->recv_cq) {
-            ibv_destroy_cq(client->cm_id->recv_cq);
-        }
-        rdma_destroy_id(client->cm_id);
-    }
-    
-    if (client->ec) {
-        rdma_destroy_event_channel(client->ec);
-    }
+    // Clean up pure IB verbs resources
+    if (client->qp) ibv_destroy_qp(client->qp);
+    if (client->send_cq) ibv_destroy_cq(client->send_cq);
+    if (client->recv_cq) ibv_destroy_cq(client->recv_cq);
+    if (client->pd) ibv_dealloc_pd(client->pd);
+    if (client->ctx) ibv_close_device(client->ctx);
     
     free(client->send_buffer);
     free(client->recv_buffer);
@@ -574,9 +543,9 @@ int main(int argc, char *argv[]) {
         return 1;
     }
     
-    // Establish RDMA connection
-    if (connect_to_server(g_client, server_addr, RDMA_PORT) < 0) {
-        fprintf(stderr, "Failed to establish RDMA connection\n");
+    // Create RDMA resources (pure IB verbs - no RDMA CM)
+    if (create_rdma_resources(g_client) < 0) {
+        fprintf(stderr, "Failed to create RDMA resources\n");
         cleanup_client(g_client);
         return 1;
     }

@@ -26,7 +26,9 @@
       "Bash(git add:*)",
       "Bash(git commit:*)",
       "Bash(gcc:*)",
-      "Bash(./test_pure_ib)"
+      "Bash(./test_pure_ib)",
+      "Bash(sudo lsof:*)",
+      "Bash(sudo kill:*)"
     ],
     "deny": []
   }

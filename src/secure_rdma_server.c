@@ -35,8 +35,8 @@ struct client_connection {
     uint32_t local_psn;
     uint32_t remote_psn;
     
-    // RDMA resources
-    struct rdma_cm_id *cm_id;
+    // RDMA resources - pure IB verbs
+    struct ibv_context *ctx;      // IB device context
     struct ibv_qp *qp;
     struct ibv_pd *pd;
     struct ibv_cq *send_cq;
@@ -60,10 +60,9 @@ struct server_context {
     int tls_listen_sock;
     pthread_t tls_thread;
     
-    // RDMA server
-    struct rdma_event_channel *ec;
-    struct rdma_cm_id *listener;
-    pthread_t rdma_thread;
+    // RDMA device info (pure IB verbs - no RDMA CM)
+    struct ibv_device **dev_list;
+    int num_devices;
     
     // Client management
     struct client_connection *clients[MAX_CLIENTS];
@@ -157,20 +156,16 @@ static int setup_qp_with_psn(struct client_connection *client) {
            client->client_id, local_params.qp_num, client->remote_params.qp_num,
            client->local_psn, client->remote_psn);
     
-    // When using RDMA CM, the QP state transitions are handled automatically
-    // by rdma_accept() and rdma_connect(). We don't need manual transitions.
-    // The QP should already be in RTS (Ready To Send) state after connection.
+    // Pure IB verbs: Manual QP state transitions with custom PSN
+    // The QP is in RESET state after creation, we need to transition it
+    // through INIT -> RTR -> RTS states with our secure PSN values
     
-    // However, we still need to set the PSN values for security
     // Check current QP state first
     struct ibv_qp_attr qp_attr;
     struct ibv_qp_init_attr init_attr;
     if (ibv_query_qp(client->qp, &qp_attr, IBV_QP_STATE, &init_attr) == 0) {
-        printf("Client %d: QP state after accept: %d\n", client->client_id, qp_attr.qp_state);
+        printf("Client %d: Initial QP state: %d\n", client->client_id, qp_attr.qp_state);
     }
-    
-    // Manual QP state transitions with custom PSN
-    // We don't use rdma_accept() to have control over PSN values
     
     // Step 1: Transition QP to INIT state
     memset(&attr, 0, sizeof(attr));
@@ -295,7 +290,7 @@ static int send_message(struct client_connection *client, const char *message) {
     }
     
     // Wait for completion
-    while (ibv_poll_cq(client->cm_id->send_cq, 1, &wc) == 0);
+    while (ibv_poll_cq(client->send_cq, 1, &wc) == 0);
     
     if (wc.status != IBV_WC_SUCCESS) {
         fprintf(stderr, "Send failed with status: %s\n", 
@@ -333,7 +328,7 @@ static void handle_client_rdma(struct client_connection *client) {
     // Main operation loop
     while (client->active && client->server->running) {
         // Poll for receive completions
-        if (ibv_poll_cq(client->cm_id->recv_cq, 1, &wc) > 0) {
+        if (ibv_poll_cq(client->recv_cq, 1, &wc) > 0) {
             if (wc.status == IBV_WC_SUCCESS) {
                 printf("Client %d: Received: %s\n", client->client_id, client->recv_buffer);
                 
@@ -448,9 +443,8 @@ static void* client_handler_thread(void *arg) {
     printf("Client %d: QP created successfully (QP num: %d)\n", 
            client->client_id, client->qp->qp_num);
     
-    // Store the context for later use
-    // We need to add this to the client structure
-    // For now, we'll work with what we have
+    // Store the context for cleanup
+    client->ctx = ctx;
     
     // Initialize RDMA resources (buffers and MRs)
     if (init_rdma_resources(client) < 0) {
@@ -472,13 +466,14 @@ static void* client_handler_thread(void *arg) {
 cleanup:
     printf("Client %d: Cleaning up\n", client->client_id);
     
-    // Clean up RDMA resources
+    // Clean up RDMA resources (pure IB verbs)
     if (client->send_mr) ibv_dereg_mr(client->send_mr);
     if (client->recv_mr) ibv_dereg_mr(client->recv_mr);
-    if (client->cm_id) {
-        rdma_disconnect(client->cm_id);
-        rdma_destroy_id(client->cm_id);
-    }
+    if (client->qp) ibv_destroy_qp(client->qp);
+    if (client->send_cq) ibv_destroy_cq(client->send_cq);
+    if (client->recv_cq) ibv_destroy_cq(client->recv_cq);
+    if (client->pd) ibv_dealloc_pd(client->pd);
+    if (client->ctx) ibv_close_device(client->ctx);
     free(client->send_buffer);
     free(client->recv_buffer);
     
@@ -569,121 +564,14 @@ static void* tls_listener_thread(void *arg) {
     return NULL;
 }
 
-// RDMA connection handler
-static int handle_rdma_connection(struct rdma_cm_id *id) {
-    struct client_connection *client = NULL;
-    struct ibv_qp_init_attr qp_attr;
-    
-    // Find the client by comparing addresses
-    struct sockaddr_in *client_addr = (struct sockaddr_in *)&id->route.addr.dst_addr;
-    
-    pthread_mutex_lock(&g_server->clients_mutex);
-    // For simplicity, assign to the most recent client without CM ID
-    for (int i = 0; i < MAX_CLIENTS; i++) {
-        if (g_server->clients[i] && !g_server->clients[i]->cm_id) {
-            client = g_server->clients[i];
-            client->cm_id = id;
-            id->context = client;
-            break;
-        }
-    }
-    pthread_mutex_unlock(&g_server->clients_mutex);
-    
-    if (!client) {
-        fprintf(stderr, "No matching client found for RDMA connection\n");
-        return -1;
-    }
-    
-    printf("Client %d: RDMA connection request received\n", client->client_id);
-    
-    // Create QP for this connection (matching client's QP creation)
-    memset(&qp_attr, 0, sizeof(qp_attr));
-    qp_attr.send_cq = ibv_create_cq(id->verbs, 10, NULL, NULL, 0);
-    qp_attr.recv_cq = ibv_create_cq(id->verbs, 10, NULL, NULL, 0);
-    qp_attr.qp_type = IBV_QPT_RC;
-    qp_attr.cap.max_send_wr = 10;
-    qp_attr.cap.max_recv_wr = 10;
-    qp_attr.cap.max_send_sge = 1;
-    qp_attr.cap.max_recv_sge = 1;
-    
-    if (!qp_attr.send_cq || !qp_attr.recv_cq) {
-        fprintf(stderr, "Failed to create CQ\n");
-        return -1;
-    }
-    
-    if (rdma_create_qp(id, NULL, &qp_attr)) {
-        perror("rdma_create_qp");
-        ibv_destroy_cq(qp_attr.send_cq);
-        ibv_destroy_cq(qp_attr.recv_cq);
-        return -1;
-    }
-    
-    // Store CQs in client structure for cleanup
-    client->send_cq = qp_attr.send_cq;
-    client->recv_cq = qp_attr.recv_cq;
-    
-    printf("Client %d: QP created successfully (QP num: %d)\n", 
-           client->client_id, id->qp->qp_num);
-    
-    // We don't use rdma_accept() because it automatically transitions QP to RTS
-    // and we need to set custom PSN values during the transition
-    // The actual connection will be established via manual QP transitions in setup_qp_with_psn()
-    
-    printf("Client %d: RDMA QP created, waiting for parameter exchange\n", client->client_id);
-    return 0;
-}
+// RDMA connection handler removed - using pure IB verbs directly in client_handler_thread
 
 // RDMA listener thread
-static void* rdma_listener_thread(void *arg) {
-    struct server_context *server = (struct server_context *)arg;
-    struct rdma_cm_event *event;
-    int ret;
-    
-    printf("RDMA listener thread started\n");
-    
-    while (server->running) {
-        ret = rdma_get_cm_event(server->ec, &event);
-        if (ret) {
-            if (server->running) {
-                perror("rdma_get_cm_event");
-            }
-            break;
-        }
-        
-        switch (event->event) {
-            case RDMA_CM_EVENT_CONNECT_REQUEST:
-                handle_rdma_connection(event->id);
-                break;
-                
-            case RDMA_CM_EVENT_ESTABLISHED:
-                printf("RDMA connection established\n");
-                break;
-                
-            case RDMA_CM_EVENT_DISCONNECTED:
-                printf("RDMA client disconnected\n");
-                if (event->id->context) {
-                    struct client_connection *client = event->id->context;
-                    client->active = 0;
-                }
-                rdma_destroy_id(event->id);
-                break;
-                
-            default:
-                printf("Unexpected RDMA event: %s\n", rdma_event_str(event->event));
-                break;
-        }
-        
-        rdma_ack_cm_event(event);
-    }
-    
-    printf("RDMA listener thread exiting\n");
-    return NULL;
-}
+// RDMA listener thread removed - using pure IB verbs without RDMA CM
 
 // Initialize server
 static struct server_context* init_server(void) {
     struct server_context *server;
-    struct sockaddr_in addr;
     
     server = calloc(1, sizeof(*server));
     if (!server) {
@@ -725,13 +613,18 @@ static struct server_context* init_server(void) {
         return NULL;
     }
     
-    // RDMA CM listener not needed - we create QPs directly after TLS connection
-    // Each client will get its own RDMA resources created in the handler thread
-    printf("RDMA resources will be created per-client after TLS connection\n");
+    // Pure IB verbs - enumerate devices at startup
+    server->dev_list = ibv_get_device_list(&server->num_devices);
+    if (!server->dev_list || server->num_devices == 0) {
+        fprintf(stderr, "No RDMA devices found\n");
+        SSL_CTX_free(server->ssl_ctx);
+        close(server->tls_listen_sock);
+        free(server);
+        return NULL;
+    }
     
-    // Initialize these to NULL since we're not using them
-    server->ec = NULL;
-    server->listener = NULL;
+    printf("Found %d RDMA device(s)\n", server->num_devices);
+    printf("RDMA resources will be created per-client after TLS connection\n");
     
     return server;
 }
@@ -746,9 +639,7 @@ static void cleanup_server(struct server_context *server) {
     if (server->tls_thread) {
         pthread_join(server->tls_thread, NULL);
     }
-    if (server->rdma_thread) {
-        pthread_join(server->rdma_thread, NULL);
-    }
+    // No RDMA thread with pure IB verbs
     
     // Clean up remaining clients
     pthread_mutex_lock(&server->clients_mutex);
@@ -759,12 +650,9 @@ static void cleanup_server(struct server_context *server) {
     }
     pthread_mutex_unlock(&server->clients_mutex);
     
-    // Clean up RDMA
-    if (server->listener) {
-        rdma_destroy_id(server->listener);
-    }
-    if (server->ec) {
-        rdma_destroy_event_channel(server->ec);
+    // Clean up RDMA device list (pure IB verbs)
+    if (server->dev_list) {
+        ibv_free_device_list(server->dev_list);
     }
     
     // Clean up TLS

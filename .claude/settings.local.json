@@ -28,7 +28,15 @@
       "Bash(gcc:*)",
       "Bash(./test_pure_ib)",
       "Bash(sudo lsof:*)",
-      "Bash(sudo kill:*)"
+      "Bash(sudo kill:*)",
+      "Bash(./test_multi_client.sh:*)",
+      "Bash(grep:*)",
+      "Bash(rm:*)",
+      "Bash(for f in client_logs/client_*.log)",
+      "Bash(do if [ -s \"$f\" ])",
+      "Bash(fi)",
+      "Bash(done)",
+      "Bash(./test_thread_safety.sh:*)"
     ],
     "deny": []
   }

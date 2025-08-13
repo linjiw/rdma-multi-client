@@ -63,6 +63,7 @@ struct server_context {
     // RDMA device info (pure IB verbs - no RDMA CM)
     struct ibv_device **dev_list;
     int num_devices;
+    struct ibv_context *device_ctx;  // Shared device context for all clients
     
     // Client management
     struct client_connection *clients[MAX_CLIENTS];
@@ -373,35 +374,23 @@ static void* client_handler_thread(void *arg) {
     // Create RDMA resources immediately (no waiting for RDMA CM events)
     // We'll create everything we need right here after PSN exchange
     
-    printf("Client %d: Creating RDMA resources without RDMA CM events\n", client->client_id);
+    printf("Client %d: Creating RDMA resources using shared device context\n", client->client_id);
     
-    // Open RDMA device directly instead of using RDMA CM
-    struct ibv_device **dev_list;
-    int num_devices;
-    
-    dev_list = ibv_get_device_list(&num_devices);
-    if (!dev_list || num_devices == 0) {
-        fprintf(stderr, "No RDMA devices found\n");
-        goto cleanup;
-    }
-    
-    // Use the first available device
-    struct ibv_context *ctx = ibv_open_device(dev_list[0]);
-    ibv_free_device_list(dev_list);
-    
+    // Use shared device context from server
+    struct ibv_context *ctx = client->server->device_ctx;
     if (!ctx) {
-        fprintf(stderr, "Failed to open RDMA device\n");
+        fprintf(stderr, "Client %d: No shared device context available\n", client->client_id);
         goto cleanup;
     }
     
-    printf("Client %d: Opened RDMA device %s\n", client->client_id, 
+    printf("Client %d: Using shared RDMA device %s\n", client->client_id, 
            ibv_get_device_name(ctx->device));
     
     // Create protection domain
     client->pd = ibv_alloc_pd(ctx);
     if (!client->pd) {
         perror("ibv_alloc_pd");
-        ibv_close_device(ctx);
+        // Don't close shared device context
         goto cleanup;
     }
     
@@ -421,7 +410,7 @@ static void* client_handler_thread(void *arg) {
         if (qp_attr.send_cq) ibv_destroy_cq(qp_attr.send_cq);
         if (qp_attr.recv_cq) ibv_destroy_cq(qp_attr.recv_cq);
         ibv_dealloc_pd(client->pd);
-        ibv_close_device(ctx);
+        // Don't close shared device context
         goto cleanup;
     }
     
@@ -436,14 +425,14 @@ static void* client_handler_thread(void *arg) {
         ibv_destroy_cq(client->send_cq);
         ibv_destroy_cq(client->recv_cq);
         ibv_dealloc_pd(client->pd);
-        ibv_close_device(ctx);
+        // Don't close shared device context
         goto cleanup;
     }
     
     printf("Client %d: QP created successfully (QP num: %d)\n", 
            client->client_id, client->qp->qp_num);
     
-    // Store the context for cleanup
+    // Store the shared context reference (don't own it)
     client->ctx = ctx;
     
     // Initialize RDMA resources (buffers and MRs)
@@ -473,7 +462,7 @@ cleanup:
     if (client->send_cq) ibv_destroy_cq(client->send_cq);
     if (client->recv_cq) ibv_destroy_cq(client->recv_cq);
     if (client->pd) ibv_dealloc_pd(client->pd);
-    if (client->ctx) ibv_close_device(client->ctx);
+    // Don't close device context - it's shared and owned by server
     free(client->send_buffer);
     free(client->recv_buffer);
     
@@ -624,6 +613,20 @@ static struct server_context* init_server(void) {
     }
     
     printf("Found %d RDMA device(s)\n", server->num_devices);
+    
+    // Open device context once for all clients to share
+    server->device_ctx = ibv_open_device(server->dev_list[0]);
+    if (!server->device_ctx) {
+        fprintf(stderr, "Failed to open RDMA device\n");
+        ibv_free_device_list(server->dev_list);
+        SSL_CTX_free(server->ssl_ctx);
+        close(server->tls_listen_sock);
+        free(server);
+        return NULL;
+    }
+    
+    printf("Opened shared RDMA device: %s\n", 
+           ibv_get_device_name(server->device_ctx->device));
     printf("RDMA resources will be created per-client after TLS connection\n");
     
     return server;
@@ -649,6 +652,11 @@ static void cleanup_server(struct server_context *server) {
         }
     }
     pthread_mutex_unlock(&server->clients_mutex);
+    
+    // Clean up shared RDMA device context
+    if (server->device_ctx) {
+        ibv_close_device(server->device_ctx);
+    }
     
     // Clean up RDMA device list (pure IB verbs)
     if (server->dev_list) {

@@ -1,0 +1,20 @@
+Thread Safety Test Report - Wed Aug 13 04:56:06 UTC 2025
+==================================
+Total connection attempts: 25
+Successful connections: 10
+PSN uniqueness: 10 unique out of 10
+Maximum concurrent clients: 10
+Server errors: 0
+Thread safety issues: 0
+
+PSN Distribution:
+thread_test_logs/client_sim_9.log:Local 0x4a1355,
+thread_test_logs/client_sim_2.log:Local 0x640e57,
+thread_test_logs/client_sim_3.log:Local 0x6ac6b7,
+thread_test_logs/client_sim_4.log:Local 0x769f99,
+thread_test_logs/client_sim_10.log:Local 0x87215b,
+thread_test_logs/client_sim_6.log:Local 0xa6dcb3,
+thread_test_logs/client_sim_1.log:Local 0xd4b661,
+thread_test_logs/client_sim_7.log:Local 0xde4265,
+thread_test_logs/client_sim_8.log:Local 0xe81c1d,
+thread_test_logs/client_sim_5.log:Local 0xfa236b,

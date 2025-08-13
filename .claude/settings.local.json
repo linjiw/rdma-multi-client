@@ -43,7 +43,11 @@
       "Bash(./demo_health_check.sh:*)",
       "Bash(./demo_cleanup.sh:*)",
       "Bash(bash:*)",
-      "Bash(./run_clean_demo.sh:*)"
+      "Bash(./run_clean_demo.sh:*)",
+      "Bash(tree:*)",
+      "Bash(git remote remove:*)",
+      "Bash(git remote add:*)",
+      "Bash(git push:*)"
     ],
     "deny": []
   }

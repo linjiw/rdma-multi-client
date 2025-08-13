@@ -19,8 +19,8 @@ ibv_devices
 
 ```bash
 # Clone the repository
-git clone https://github.com/YOUR_USERNAME/secure-rdma-pure-ib.git
-cd secure-rdma-pure-ib
+git clone https://github.com/linjiw/rmda-multi-client.git
+cd rmda-multi-client
 
 # Build all components
 make clean && make all

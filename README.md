@@ -34,7 +34,7 @@ This project implements a secure RDMA (Remote Direct Memory Access) server-clien
 
 ## Project Structure
 ```
-rdma-project/
+rmda-multi-client/
 ├── src/                        # Source code
 │   ├── secure_rdma_server.c   # Multi-client server (pure IB verbs)
 │   ├── secure_rdma_client.c   # Client implementation
@@ -59,6 +59,12 @@ rdma-project/
 ```
 
 ## Quick Start
+
+### Clone Repository
+```bash
+git clone https://github.com/linjiw/rmda-multi-client.git
+cd rmda-multi-client
+```
 
 ### Prerequisites
 ```bash

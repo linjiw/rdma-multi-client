@@ -66,3 +66,11 @@ coverage/
 # Python cache (if any)
 __pycache__/
 *.pyc
+
+# Terraform
+*.tfstate
+*.tfstate.*
+.terraform/
+.terraform.lock.hcl
+terraform.tfvars
+*.tfplan

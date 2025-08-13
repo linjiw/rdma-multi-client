@@ -60,6 +60,16 @@ rmda-multi-client/
 
 ## Quick Start
 
+### AWS Setup (Recommended)
+For running on AWS EC2 with Soft-RoCE:
+```bash
+# Use Ubuntu 20.04/22.04 on t3.large instance
+wget https://raw.githubusercontent.com/linjiw/rmda-multi-client/main/scripts/aws_quick_setup.sh
+chmod +x aws_quick_setup.sh
+./aws_quick_setup.sh
+```
+See [AWS_SETUP.md](AWS_SETUP.md) for detailed AWS configuration.
+
 ### Clone Repository
 ```bash
 git clone https://github.com/linjiw/rmda-multi-client.git
@@ -183,10 +193,31 @@ Key parameters in `src/secure_rdma_server.c`:
 
 ## Troubleshooting
 
+### AWS Kernel Module Issues
+**CRITICAL**: Not all AWS instances/kernels support Soft-RoCE!
+
+```bash
+# Check kernel version (need 5.15.0 or newer)
+uname -r
+
+# Check if rdma_rxe module exists
+modinfo rdma_rxe
+
+# If missing on Ubuntu 20.04, install HWE kernel:
+sudo apt-get update
+sudo apt-get install -y linux-generic-hwe-20.04
+sudo reboot
+
+# If on Ubuntu 22.04 and having issues, switch to Ubuntu 20.04
+```
+
 ### No RDMA Devices Found
 ```bash
 # Check RDMA devices
 ibv_devices
+
+# Check if modules loaded
+lsmod | grep rdma
 
 # Configure Soft-RoCE if needed
 sudo modprobe rdma_rxe
@@ -214,6 +245,11 @@ tail -f server.log
 sudo apt-get install -y build-essential libibverbs-dev librdmacm-dev libssl-dev
 ```
 
+### AWS Instance Selection
+- **Working**: t3.large with Ubuntu 20.04 + HWE kernel (5.15.0-139-generic)
+- **Issues**: Ubuntu 22.04 (kernel module compatibility issues)
+- **Solution**: Use Ubuntu 20.04 LTS AMI with HWE kernel
+
 ## Future Improvements
 
 1. Dynamic client allocation (remove MAX_CLIENTS limit)
@@ -225,11 +261,31 @@ sudo apt-get install -y build-essential libibverbs-dev librdmacm-dev libssl-dev
 7. Kubernetes deployment manifests
 8. Prometheus metrics endpoint
 
+## AWS Deployment
+
+### Quick AWS Setup
+```bash
+# Use t3.large Ubuntu 20.04/22.04 instance
+wget https://raw.githubusercontent.com/linjiw/rmda-multi-client/main/scripts/aws_quick_setup.sh
+bash aws_quick_setup.sh
+```
+
+### Terraform Deployment
+```bash
+cd terraform
+terraform init
+terraform apply -var="key_name=your-key"
+```
+
+See [AWS_SETUP.md](AWS_SETUP.md) for detailed AWS instructions.
+
 ## Documentation
 
+- [AWS Setup Guide](AWS_SETUP.md) - Complete AWS EC2 configuration
 - [Pure IB Verbs Design](docs/PURE_IB_VERBS_DESIGN.md) - Architecture and design decisions
 - [Implementation Log](IMPLEMENTATION_LOG.md) - Development progress and findings
 - [Multi-Client Analysis](MULTI_CLIENT_ANALYSIS.md) - Concurrent client handling analysis
+- [Quick Start Guide](QUICK_START.md) - Getting started quickly
 - [CLAUDE.md](CLAUDE.md) - AI assistant instructions and project context
 
 ## License

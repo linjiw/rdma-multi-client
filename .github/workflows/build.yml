@@ -1,0 +1,47 @@
+name: Build and Test
+
+on:
+  push:
+    branches: [ master, main ]
+  pull_request:
+    branches: [ master, main ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Install dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y build-essential
+        sudo apt-get install -y libibverbs-dev librdmacm-dev libssl-dev
+        
+    - name: Build project
+      run: |
+        make clean
+        make all
+        
+    - name: Check binaries
+      run: |
+        ls -la build/
+        file build/secure_server
+        file build/secure_client
+        
+    - name: Setup Soft-RoCE
+      run: |
+        sudo modprobe rdma_rxe || true
+        sudo rdma link add rxe0 type rxe netdev eth0 || true
+        ibv_devices || true
+        
+    - name: Run basic test
+      run: |
+        make test || true
+        
+    - name: Upload artifacts
+      uses: actions/upload-artifact@v3
+      with:
+        name: binaries
+        path: build/

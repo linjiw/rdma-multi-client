@@ -1,0 +1,31 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(ibv_devices:*)",
+      "Bash(ibv_devinfo:*)",
+      "Bash(lsmod:*)",
+      "Bash(make:*)",
+      "Bash(cat:*)",
+      "Bash(lsof:*)",
+      "Bash(ss:*)",
+      "Bash(pkill:*)",
+      "Bash(true)",
+      "Bash(ldd:*)",
+      "Bash(timeout:*)",
+      "Bash(sudo fuser:*)",
+      "Bash(./build/secure_server)",
+      "Bash(ln:*)",
+      "Bash(./comprehensive_rdma_test.sh:*)",
+      "Bash(wait)",
+      "Bash(chmod:*)",
+      "Bash(./test_client.sh:*)",
+      "Bash(./test_connection.sh)",
+      "Bash(sudo apt-get install:*)",
+      "Bash(git init:*)",
+      "Bash(git config:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)"
+    ],
+    "deny": []
+  }
+}

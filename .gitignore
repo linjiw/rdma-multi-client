@@ -1,0 +1,33 @@
+# Build artifacts
+build/
+*.o
+*.a
+*.so
+
+# Certificates and keys
+*.key
+*.crt
+*.pem
+
+# Log files
+*.log
+logs/
+
+# Core dumps
+core
+core.*
+
+# Test results
+test_results/
+*_results_*.txt
+
+# Editor files
+*.swp
+*.swo
+*~
+.vscode/
+.idea/
+
+# Temporary files
+*.tmp
+/tmp/

@@ -14,8 +14,10 @@
 #include <errno.h>
 #include <sys/socket.h>
 #include <arpa/inet.h>
+#include <time.h>
 #include "rdma_compat.h"
 #include "tls_utils.h"
+#include "disconnect_protocol.h"
 
 #define RDMA_PORT 4791
 #define BUFFER_SIZE 4096
@@ -44,6 +46,9 @@ struct client_context {
     // Client state
     volatile int connected;
     volatile int running;
+    
+    // Disconnection protocol
+    struct disconnect_context disconnect_ctx;
 };
 
 static struct client_context *g_client = NULL;
@@ -266,6 +271,10 @@ static int send_message(struct client_context *client, const char *message) {
     return 0;
 }
 
+// Forward declarations for disconnection functions
+static void process_disconnect_protocol(struct client_context *client);
+static int handle_disconnect_ack(struct client_context *client);
+
 // Receive message from server
 static int receive_message(struct client_context *client) {
     struct ibv_wc wc;
@@ -273,12 +282,32 @@ static int receive_message(struct client_context *client) {
     // Poll for completion
     while (ibv_poll_cq(client->recv_cq, 1, &wc) == 0) {
         if (!client->running) return -1;
+        
+        // Process disconnect protocol while waiting
+        if (client->disconnect_ctx.state != DISC_STATE_NONE) {
+            process_disconnect_protocol(client);
+            if (client->disconnect_ctx.state == DISC_STATE_COMPLETED) {
+                return -1;
+            }
+        }
+        
         usleep(1000);
     }
     
     if (wc.status != IBV_WC_SUCCESS) {
         fprintf(stderr, "Receive failed with status: %s\n",
                 ibv_wc_status_str(wc.status));
+        return -1;
+    }
+    
+    // Check if this is a disconnect protocol message
+    if (is_disconnect_message(client->recv_buffer)) {
+        if (strncmp(client->recv_buffer, DISCONNECT_ACK, strlen(DISCONNECT_ACK)) == 0) {
+            handle_disconnect_ack(client);
+            return 0; // Don't post another receive during disconnection
+        }
+        // Unexpected disconnect message
+        fprintf(stderr, "Unexpected disconnect message: %s\n", client->recv_buffer);
         return -1;
     }
     
@@ -413,6 +442,81 @@ static int create_rdma_resources(struct client_context *client) {
     return 0;
 }
 
+// Process disconnect protocol timeout
+static void process_disconnect_protocol(struct client_context *client) {
+    // Check for timeout
+    if (client->disconnect_ctx.state == DISC_STATE_REQ_SENT) {
+        if (check_disconnect_timeout(&client->disconnect_ctx, DISCONNECT_TIMEOUT_CLIENT)) {
+            if (client->disconnect_ctx.retry_count < DISCONNECT_RETRY_COUNT) {
+                printf("Timeout waiting for DISCONNECT_ACK, retrying...\n");
+                client->disconnect_ctx.retry_count++;
+                start_disconnect_timer(&client->disconnect_ctx);
+                send_message(client, DISCONNECT_REQ);
+            } else {
+                printf("Timeout waiting for DISCONNECT_ACK, forcing disconnect\n");
+                client->disconnect_ctx.graceful = false;
+                client->disconnect_ctx.state = DISC_STATE_COMPLETED;
+                client->connected = 0;
+            }
+        }
+    }
+}
+
+// Graceful disconnection functions
+static int initiate_graceful_disconnect(struct client_context *client) {
+    printf("\n╔══════════════════════════════════════════╗\n");
+    printf("║   INITIATING GRACEFUL DISCONNECTION     ║\n");
+    printf("╚══════════════════════════════════════════╝\n");
+    
+    // Initialize disconnect context
+    client->disconnect_ctx.state = DISC_STATE_REQ_SENT;
+    start_disconnect_timer(&client->disconnect_ctx);
+    client->disconnect_ctx.retry_count = 0;
+    
+    // Send DISCONNECT_REQ
+    if (send_message(client, DISCONNECT_REQ) < 0) {
+        fprintf(stderr, "Failed to send DISCONNECT_REQ\n");
+        return -1;
+    }
+    
+    printf("│ [1/3] → Sent DISCONNECT_REQ to server\n");
+    printf("│       Waiting for server ACK...\n");
+    return 0;
+}
+
+static int handle_disconnect_ack(struct client_context *client) {
+    if (client->disconnect_ctx.state != DISC_STATE_REQ_SENT) {
+        fprintf(stderr, "Unexpected DISCONNECT_ACK in state %s\n",
+                disconnect_state_str(client->disconnect_ctx.state));
+        return -1;
+    }
+    
+    printf("│ [2/3] ← Received DISCONNECT_ACK from server\n");
+    client->disconnect_ctx.state = DISC_STATE_ACK_RECEIVED;
+    
+    // Send DISCONNECT_FIN
+    if (send_message(client, DISCONNECT_FIN) < 0) {
+        fprintf(stderr, "Failed to send DISCONNECT_FIN\n");
+        return -1;
+    }
+    
+    printf("│ [3/3] → Sent DISCONNECT_FIN to server\n");
+    client->disconnect_ctx.state = DISC_STATE_FIN_SENT;
+    
+    // Wait briefly for final completion
+    usleep(100000); // 100ms
+    
+    client->disconnect_ctx.state = DISC_STATE_COMPLETED;
+    client->connected = 0;
+    
+    printf("╔══════════════════════════════════════════╗\n");
+    printf("║   ✓ GRACEFUL DISCONNECTION COMPLETE     ║\n");
+    printf("╚══════════════════════════════════════════╝\n");
+    
+    return 0;
+}
+
+
 // Interactive client loop
 static void run_interactive_client(struct client_context *client) {
     char input[256];
@@ -464,6 +568,20 @@ static void run_interactive_client(struct client_context *client) {
                 sleep(1);
             }
         } else if (strcmp(input, "quit") == 0) {
+            // Initiate graceful disconnection
+            if (initiate_graceful_disconnect(client) == 0) {
+                // Wait for disconnection to complete
+                time_t start = time(NULL);
+                while (client->disconnect_ctx.state != DISC_STATE_COMPLETED) {
+                    if (receive_message(client) < 0) {
+                        break;
+                    }
+                    if ((time(NULL) - start) > DISCONNECT_TIMEOUT_CLIENT) {
+                        printf("Disconnection timeout, forcing close\n");
+                        break;
+                    }
+                }
+            }
             break;
         } else if (strlen(input) > 0) {
             printf("Unknown command. Try 'send <message>', 'write <message>', 'auto', or 'quit'\n");
@@ -520,6 +638,7 @@ int main(int argc, char *argv[]) {
         return 1;
     }
     g_client->running = 1;
+    init_disconnect_context(&g_client->disconnect_ctx);
     
     // Initialize OpenSSL
     init_openssl();

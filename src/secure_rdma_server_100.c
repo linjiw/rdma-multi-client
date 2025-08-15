@@ -15,12 +15,10 @@
 #include <errno.h>
 #include <sys/socket.h>
 #include <arpa/inet.h>
-#include <time.h>
 #include "rdma_compat.h"
 #include "tls_utils.h"
-#include "disconnect_protocol.h"
 
-#define MAX_CLIENTS 10
+#define MAX_CLIENTS 100
 #define RDMA_PORT 4791
 #define BUFFER_SIZE 4096
 #define TIMEOUT_MS 5000
@@ -50,9 +48,6 @@ struct client_connection {
     
     // Remote connection info
     struct rdma_conn_params remote_params;
-    
-    // Disconnection protocol
-    struct disconnect_context disconnect_ctx;
     
     // Server context reference
     struct server_context *server;
@@ -308,69 +303,6 @@ static int send_message(struct client_connection *client, const char *message) {
     return 0;
 }
 
-// Server-side disconnection protocol functions
-static int handle_disconnect_request(struct client_connection *client) {
-    if (client->disconnect_ctx.state != DISC_STATE_NONE) {
-        fprintf(stderr, "Client %d: Already in disconnection state %s\n",
-                client->client_id, disconnect_state_str(client->disconnect_ctx.state));
-        return -1;
-    }
-    
-    printf("\n╔══════════════════════════════════════════════════╗\n");
-    printf("║ Client %d: GRACEFUL DISCONNECTION INITIATED      ║\n", client->client_id);
-    printf("╚══════════════════════════════════════════════════╝\n");
-    printf("│ [1/3] ← Received DISCONNECT_REQ from client %d\n", client->client_id);
-    
-    // Update state
-    client->disconnect_ctx.state = DISC_STATE_REQ_RECEIVED;
-    start_disconnect_timer(&client->disconnect_ctx);
-    
-    // Send DISCONNECT_ACK
-    if (send_message(client, DISCONNECT_ACK) < 0) {
-        fprintf(stderr, "Client %d: Failed to send DISCONNECT_ACK\n", client->client_id);
-        client->disconnect_ctx.graceful = false;
-        return -1;
-    }
-    
-    printf("│ [2/3] → Sent DISCONNECT_ACK to client %d\n", client->client_id);
-    printf("│       Waiting for FIN from client %d...\n", client->client_id);
-    client->disconnect_ctx.state = DISC_STATE_ACK_SENT;
-    
-    return 0;
-}
-
-static int handle_disconnect_fin(struct client_connection *client) {
-    if (client->disconnect_ctx.state != DISC_STATE_ACK_SENT) {
-        fprintf(stderr, "Client %d: Unexpected DISCONNECT_FIN in state %s\n",
-                client->client_id, disconnect_state_str(client->disconnect_ctx.state));
-        return -1;
-    }
-    
-    printf("│ [3/3] ← Received DISCONNECT_FIN from client %d\n", client->client_id);
-    
-    client->disconnect_ctx.state = DISC_STATE_FIN_RECEIVED;
-    client->disconnect_ctx.state = DISC_STATE_COMPLETED;
-    client->active = 0;
-    
-    printf("╔══════════════════════════════════════════════════╗\n");
-    printf("║ Client %d: ✓ GRACEFUL DISCONNECTION COMPLETE     ║\n", client->client_id);
-    printf("╚══════════════════════════════════════════════════╝\n");
-    
-    return 0;
-}
-
-static void process_server_disconnect_timeout(struct client_connection *client) {
-    if (client->disconnect_ctx.state == DISC_STATE_ACK_SENT) {
-        if (check_disconnect_timeout(&client->disconnect_ctx, DISCONNECT_TIMEOUT_SERVER)) {
-            printf("Client %d: Timeout waiting for DISCONNECT_FIN, forcing cleanup\n", 
-                   client->client_id);
-            client->disconnect_ctx.graceful = false;
-            client->disconnect_ctx.state = DISC_STATE_COMPLETED;
-            client->active = 0;
-        }
-    }
-}
-
 // Handle client RDMA operations
 static void handle_client_rdma(struct client_connection *client) {
     struct ibv_wc wc;
@@ -396,49 +328,23 @@ static void handle_client_rdma(struct client_connection *client) {
     
     // Main operation loop
     while (client->active && client->server->running) {
-        // Check for disconnect timeout
-        if (client->disconnect_ctx.state != DISC_STATE_NONE) {
-            process_server_disconnect_timeout(client);
-            if (client->disconnect_ctx.state == DISC_STATE_COMPLETED) {
-                break;
-            }
-        }
-        
         // Poll for receive completions
         if (ibv_poll_cq(client->recv_cq, 1, &wc) > 0) {
             if (wc.status == IBV_WC_SUCCESS) {
                 printf("Client %d: Received: %s\n", client->client_id, client->recv_buffer);
                 
-                // Check for disconnect protocol messages
-                if (is_disconnect_message(client->recv_buffer)) {
-                    if (strncmp(client->recv_buffer, DISCONNECT_REQ, strlen(DISCONNECT_REQ)) == 0) {
-                        handle_disconnect_request(client);
-                    } else if (strncmp(client->recv_buffer, DISCONNECT_FIN, strlen(DISCONNECT_FIN)) == 0) {
-                        handle_disconnect_fin(client);
-                        if (client->disconnect_ctx.state == DISC_STATE_COMPLETED) {
-                            break;
-                        }
-                    } else {
-                        fprintf(stderr, "Client %d: Unexpected disconnect message: %s\n",
-                                client->client_id, client->recv_buffer);
-                    }
-                } else {
-                    // Normal message - echo back with client ID
-                    snprintf(response, sizeof(response), 
-                            "Server echo [Client %d]: %s", 
-                            client->client_id, client->recv_buffer);
-                    
-                    if (send_message(client, response) < 0) {
-                        break;
-                    }
+                // Echo back with client ID
+                snprintf(response, sizeof(response), 
+                        "Server echo [Client %d]: %s", 
+                        client->client_id, client->recv_buffer);
+                
+                if (send_message(client, response) < 0) {
+                    break;
                 }
                 
-                // Post another receive (unless disconnecting)
-                if (client->disconnect_ctx.state == DISC_STATE_NONE ||
-                    client->disconnect_ctx.state == DISC_STATE_ACK_SENT) {
-                    if (post_receive(client) < 0) {
-                        break;
-                    }
+                // Post another receive
+                if (post_receive(client) < 0) {
+                    break;
                 }
             } else {
                 fprintf(stderr, "Client %d: Receive failed: %s\n", 
@@ -547,11 +453,7 @@ static void* client_handler_thread(void *arg) {
     handle_client_rdma(client);
     
 cleanup:
-    if (client->disconnect_ctx.graceful && client->disconnect_ctx.state == DISC_STATE_COMPLETED) {
-        printf("Client %d: Graceful disconnection completed successfully\n", client->client_id);
-    } else {
-        printf("Client %d: Cleaning up (forced disconnection)\n", client->client_id);
-    }
+    printf("Client %d: Cleaning up\n", client->client_id);
     
     // Clean up RDMA resources (pure IB verbs)
     if (client->send_mr) ibv_dereg_mr(client->send_mr);
@@ -623,7 +525,6 @@ static void* tls_listener_thread(void *arg) {
         client->tls_conn = tls_conn;
         client->server = server;
         client->active = 1;
-        init_disconnect_context(&client->disconnect_ctx);
         
         // Find free slot and assign client ID
         for (int i = 0; i < MAX_CLIENTS; i++) {

@@ -51,9 +51,32 @@
       "Bash(mkdir:*)",
       "Bash(git restore:*)",
       "Bash(git remote set-url:*)",
-      "Bash(git pull:*)"
+      "Bash(git pull:*)",
+      "Bash(ulimit:*)",
+      "Bash(./build/performance_test:*)",
+      "Bash(cp:*)",
+      "Bash(sed:*)",
+      "Bash(rdma link:*)",
+      "Bash(./build_configurable_server.sh:*)",
+      "Bash(./build/rdma_performance_test:*)",
+      "Bash(rdma resource:*)",
+      "Bash(killall:*)",
+      "Bash(./find_rdma_limit.sh:*)",
+      "Bash(./test_real_limit.sh:*)",
+      "Bash(sudo modprobe:*)",
+      "Bash(sudo rdma link:*)",
+      "Bash(sudo apt-get:*)",
+      "Bash(ip link:*)",
+      "Bash(./test_exact_limit.sh:*)",
+      "Bash(./find_max_clients.sh:*)",
+      "Bash(./test_graceful_disconnect.sh:*)",
+      "Bash(./demo_disconnect_validation.sh:*)",
+      "Bash(./demo_final_validation.sh:*)"
     ],
     "deny": [],
-    "defaultMode": "acceptEdits"
+    "defaultMode": "acceptEdits",
+    "additionalDirectories": [
+      "/usr/lib/modules"
+    ]
   }
 }

@@ -101,93 +101,114 @@
         }
 
         .protocol-diagram {
-            display: flex;
-            justify-content: space-around;
-            align-items: flex-start;
-            margin: 2rem 0;
-            position: relative;
+            display: grid;
+            grid-template-columns: 1fr 2fr 1fr;
+            align-items: start;
+            gap: 2rem;
+            margin: 3rem 0;
             min-height: 400px;
+            position: relative;
         }
 
         .entity {
             text-align: center;
-            flex: 1;
-            position: relative;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
         }
 
         .entity-box {
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             color: white;
-            padding: 1.5rem;
+            padding: 1.5rem 2rem;
             border-radius: 15px;
             font-weight: bold;
             font-size: 1.2rem;
             box-shadow: 0 5px 20px rgba(102, 126, 234, 0.4);
             margin-bottom: 2rem;
+            min-width: 120px;
         }
 
         .timeline {
-            width: 2px;
-            background: #ddd;
+            width: 3px;
+            background: linear-gradient(180deg, #667eea 0%, #764ba2 100%);
             height: 300px;
             margin: 0 auto;
+            position: relative;
+            border-radius: 2px;
+        }
+
+        .messages-container {
+            display: flex;
+            flex-direction: column;
+            justify-content: space-around;
+            height: 400px;
             position: relative;
         }
 
         .message {
-            position: absolute;
-            width: 100%;
             display: flex;
             align-items: center;
             justify-content: center;
             opacity: 0;
             animation: fadeIn 0.5s forwards;
+            position: relative;
+        }
+
+        .message-wrapper {
+            display: flex;
+            align-items: center;
+            width: 100%;
+            position: relative;
         }
 
         .message-arrow {
-            flex-grow: 1;
-            height: 2px;
-            background: #667eea;
+            flex: 1;
+            height: 3px;
             position: relative;
-            margin: 0 20px;
+            background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
         }
 
         .message-arrow::after {
             content: '';
             position: absolute;
-            right: -10px;
-            top: -4px;
+            right: -12px;
+            top: -5px;
             width: 0;
             height: 0;
-            border-left: 10px solid #667eea;
-            border-top: 5px solid transparent;
-            border-bottom: 5px solid transparent;
+            border-left: 12px solid #764ba2;
+            border-top: 6px solid transparent;
+            border-bottom: 6px solid transparent;
         }
 
         .message-arrow.reverse {
-            background: #764ba2;
+            background: linear-gradient(90deg, #764ba2 0%, #667eea 100%);
+            direction: rtl;
         }
 
         .message-arrow.reverse::after {
-            left: -10px;
+            left: -12px;
             right: auto;
             border-left: none;
-            border-right: 10px solid #764ba2;
+            border-right: 12px solid #667eea;
         }
 
         .message-label {
             background: white;
-            padding: 0.5rem 1rem;
-            border-radius: 20px;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            padding: 0.75rem 1.5rem;
+            border-radius: 25px;
+            box-shadow: 0 3px 15px rgba(0,0,0,0.15);
             font-weight: 600;
             white-space: nowrap;
+            position: absolute;
+            left: 50%;
+            transform: translateX(-50%);
             z-index: 10;
         }
 
-        .message:nth-child(1) { top: 50px; animation-delay: 0.5s; }
-        .message:nth-child(2) { top: 150px; animation-delay: 1.5s; }
-        .message:nth-child(3) { top: 250px; animation-delay: 2.5s; }
+        .message:nth-child(1) { animation-delay: 0.5s; }
+        .message:nth-child(2) { animation-delay: 1.5s; }
+        .message:nth-child(3) { animation-delay: 2.5s; }
 
         @keyframes fadeIn {
             to { opacity: 1; }
@@ -445,10 +466,49 @@
 
         /* Responsive */
         @media (max-width: 768px) {
-            .hero h1 { font-size: 2rem; }
-            .protocol-diagram { flex-direction: column; }
-            .message-arrow { display: none; }
-            .nav-links { flex-direction: column; gap: 0.5rem; }
+            .hero h1 { 
+                font-size: 2rem; 
+            }
+            
+            .protocol-diagram { 
+                grid-template-columns: 1fr;
+                grid-template-rows: auto auto auto;
+                gap: 1rem;
+            }
+            
+            .messages-container {
+                order: 2;
+                height: auto;
+                gap: 2rem;
+                padding: 2rem 0;
+            }
+            
+            .entity:first-child {
+                order: 1;
+            }
+            
+            .entity:last-child {
+                order: 3;
+            }
+            
+            .timeline {
+                display: none;
+            }
+            
+            .message-arrow { 
+                display: none; 
+            }
+            
+            .message-label {
+                position: static;
+                transform: none;
+                margin: 0 auto;
+            }
+            
+            .nav-links { 
+                flex-direction: column; 
+                gap: 0.5rem; 
+            }
         }
     </style>
 </head>
@@ -491,18 +551,30 @@
                     <div class="timeline"></div>
                 </div>
                 
-                <div style="position: absolute; width: 100%; height: 100%;">
+                <div class="messages-container">
                     <div class="message">
-                        <div class="message-arrow"></div>
-                        <div class="message-label" style="color: #ff6b6b;">DISCONNECT_REQ</div>
+                        <div class="message-wrapper">
+                            <div class="message-arrow"></div>
+                            <div class="message-label" style="color: #ff6b6b;">
+                                <strong>1.</strong> DISCONNECT_REQ →
+                            </div>
+                        </div>
                     </div>
                     <div class="message">
-                        <div class="message-arrow reverse"></div>
-                        <div class="message-label" style="color: #51cf66;">DISCONNECT_ACK</div>
+                        <div class="message-wrapper">
+                            <div class="message-arrow reverse"></div>
+                            <div class="message-label" style="color: #51cf66;">
+                                ← <strong>2.</strong> DISCONNECT_ACK
+                            </div>
+                        </div>
                     </div>
                     <div class="message">
-                        <div class="message-arrow"></div>
-                        <div class="message-label" style="color: #339af0;">DISCONNECT_FIN</div>
+                        <div class="message-wrapper">
+                            <div class="message-arrow"></div>
+                            <div class="message-label" style="color: #339af0;">
+                                <strong>3.</strong> DISCONNECT_FIN →
+                            </div>
+                        </div>
                     </div>
                 </div>
                 
@@ -510,6 +582,24 @@
                     <div class="entity-box">SERVER</div>
                     <div class="timeline"></div>
                 </div>
+            </div>
+            
+            <!-- ASCII Art Alternative for clarity -->
+            <div style="background: #f8f9fa; padding: 2rem; border-radius: 10px; margin-top: 2rem; font-family: 'Courier New', monospace; overflow-x: auto;">
+                <pre style="margin: 0; line-height: 1.6; color: #333;">
+    CLIENT                                          SERVER
+       |                                               |
+       |  <span style="color: #ff6b6b; font-weight: bold;">1. DISCONNECT_REQ</span>                          |
+       |---------------------------------------------->|
+       |                                               |
+       |  <span style="color: #51cf66; font-weight: bold;">2. DISCONNECT_ACK</span>                          |
+       |<----------------------------------------------|
+       |                                               |
+       |  <span style="color: #339af0; font-weight: bold;">3. DISCONNECT_FIN</span>                          |
+       |---------------------------------------------->|
+       |                                               |
+    [CLOSED]                                        [CLOSED]
+                </pre>
             </div>
         </div>
 

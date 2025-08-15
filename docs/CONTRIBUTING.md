@@ -42,11 +42,11 @@ We use conventional commits:
 
 ```bash
 # Clone your fork
-git clone https://github.com/YOUR_USERNAME/rmda-multi-client.git
-cd rmda-multi-client
+git clone https://github.com/YOUR_USERNAME/rdma-multi-client.git
+cd rdma-multi-client
 
 # Add upstream remote
-git remote add upstream https://github.com/linjiw/rmda-multi-client.git
+git remote add upstream https://github.com/linjiw/rdma-multi-client.git
 
 # Install dependencies
 sudo apt-get install -y libibverbs-dev librdmacm-dev libssl-dev

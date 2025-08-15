@@ -74,7 +74,7 @@ ssh -i your-key.pem ubuntu@<server-ip>
 ls -la ~/setup_complete
 
 # Run demo
-cd ~/rmda-multi-client
+cd ~/rdma-multi-client
 ./run_demo_auto.sh
 ```
 
@@ -84,14 +84,14 @@ If you created both server and client:
 
 1. **On Server**:
 ```bash
-cd ~/rmda-multi-client
+cd ~/rdma-multi-client
 ./build/secure_server
 ```
 
 2. **On Client**:
 ```bash
 # Get server private IP from terraform output
-cd ~/rmda-multi-client
+cd ~/rdma-multi-client
 ./build/secure_client <server-private-ip> <server-private-ip>
 ```
 
@@ -125,7 +125,7 @@ ibv_devices
 
 ### Check project build
 ```bash
-cd ~/rmda-multi-client
+cd ~/rdma-multi-client
 ls -la build/
 ```
 

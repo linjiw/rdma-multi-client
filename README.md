@@ -34,7 +34,7 @@ This project implements a secure RDMA (Remote Direct Memory Access) server-clien
 
 ## Project Structure
 ```
-rmda-multi-client/
+rdma-multi-client/
 ├── src/                        # Source code
 │   ├── secure_rdma_server.c   # Multi-client server (pure IB verbs)
 │   ├── secure_rdma_client.c   # Client implementation
@@ -64,7 +64,7 @@ rmda-multi-client/
 For running on AWS EC2 with Soft-RoCE:
 ```bash
 # Use Ubuntu 20.04/22.04 on t3.large instance
-wget https://raw.githubusercontent.com/linjiw/rmda-multi-client/main/scripts/aws_quick_setup.sh
+wget https://raw.githubusercontent.com/linjiw/rdma-multi-client/main/scripts/aws_quick_setup.sh
 chmod +x aws_quick_setup.sh
 ./aws_quick_setup.sh
 ```
@@ -72,8 +72,8 @@ See [AWS_SETUP.md](AWS_SETUP.md) for detailed AWS configuration.
 
 ### Clone Repository
 ```bash
-git clone https://github.com/linjiw/rmda-multi-client.git
-cd rmda-multi-client
+git clone https://github.com/linjiw/rdma-multi-client.git
+cd rdma-multi-client
 ```
 
 ### Prerequisites
@@ -266,7 +266,7 @@ sudo apt-get install -y build-essential libibverbs-dev librdmacm-dev libssl-dev
 ### Quick AWS Setup
 ```bash
 # Use t3.large Ubuntu 20.04/22.04 instance
-wget https://raw.githubusercontent.com/linjiw/rmda-multi-client/main/scripts/aws_quick_setup.sh
+wget https://raw.githubusercontent.com/linjiw/rdma-multi-client/main/scripts/aws_quick_setup.sh
 bash aws_quick_setup.sh
 ```
 

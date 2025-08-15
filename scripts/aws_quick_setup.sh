@@ -120,12 +120,12 @@ fi
 echo -e "\n${YELLOW}Step 5: Cloning and building RDMA project...${NC}"
 
 # Check if already cloned
-if [ ! -d "$HOME/rmda-multi-client" ]; then
+if [ ! -d "$HOME/rdma-multi-client" ]; then
     cd $HOME
-    git clone https://github.com/linjiw/rmda-multi-client.git
+    git clone https://github.com/linjiw/rdma-multi-client.git
 fi
 
-cd $HOME/rmda-multi-client
+cd $HOME/rdma-multi-client
 
 # Build project
 make clean && make all
@@ -175,18 +175,18 @@ echo "  • Network Interface: $INTERFACE"
 echo "  • RDMA Device: rxe0"
 echo ""
 echo -e "${YELLOW}Project Location:${NC}"
-echo "  $HOME/rmda-multi-client"
+echo "  $HOME/rdma-multi-client"
 echo ""
 echo -e "${YELLOW}To run the demo:${NC}"
-echo "  cd $HOME/rmda-multi-client"
+echo "  cd $HOME/rdma-multi-client"
 echo "  ./run_demo_auto.sh"
 echo ""
 echo -e "${YELLOW}To start server:${NC}"
-echo "  cd $HOME/rmda-multi-client"
+echo "  cd $HOME/rdma-multi-client"
 echo "  ./build/secure_server"
 echo ""
 echo -e "${YELLOW}To connect client:${NC}"
-echo "  cd $HOME/rmda-multi-client"
+echo "  cd $HOME/rdma-multi-client"
 echo "  ./build/secure_client 127.0.0.1 localhost"
 echo ""
 echo -e "${GREEN}Setup script completed successfully!${NC}"

@@ -169,13 +169,13 @@ locals {
     
     # Clone and build project
     cd /home/ubuntu
-    sudo -u ubuntu git clone https://github.com/linjiw/rmda-multi-client.git
-    cd rmda-multi-client
+    sudo -u ubuntu git clone https://github.com/linjiw/rdma-multi-client.git
+    cd rdma-multi-client
     sudo -u ubuntu make clean && sudo -u ubuntu make all
     sudo -u ubuntu make generate-cert
     
     # Verify build completed
-    if [ -f /home/ubuntu/rmda-multi-client/build/secure_server ]; then
+    if [ -f /home/ubuntu/rdma-multi-client/build/secure_server ]; then
       echo "Build successful!"
     else
       echo "Build failed! Check logs."
@@ -211,7 +211,7 @@ locals {
     
     To verify:
     - ibv_devices
-    - cd ~/rmda-multi-client && ./run_demo_auto.sh
+    - cd ~/rdma-multi-client && ./run_demo_auto.sh
     EOSTATUS
     chown ubuntu:ubuntu /home/ubuntu/setup_complete
     

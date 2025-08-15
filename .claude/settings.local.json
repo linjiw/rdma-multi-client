@@ -71,7 +71,11 @@
       "Bash(./find_max_clients.sh:*)",
       "Bash(./test_graceful_disconnect.sh:*)",
       "Bash(./demo_disconnect_validation.sh:*)",
-      "Bash(./demo_final_validation.sh:*)"
+      "Bash(./demo_final_validation.sh:*)",
+      "Bash(echo:*)",
+      "Bash(./build/rdma_rag_demo 5000)",
+      "Bash(./build/rdma_rag_demo 1000)",
+      "Bash(gdb:*)"
     ],
     "deny": [],
     "defaultMode": "acceptEdits",

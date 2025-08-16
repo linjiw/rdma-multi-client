@@ -1,5 +1,7 @@
 # Secure RDMA with Pure IB Verbs Implementation
 
+🌐 **[Interactive Documentation & Demos](https://linjiw.github.io/rdma-multi-client/)** - Explore visualizations, performance metrics, and live demos
+
 ## Overview
 
 This project implements a secure RDMA (Remote Direct Memory Access) server-client architecture using pure InfiniBand verbs, with TLS-based secure PSN (Packet Sequence Number) exchange. The implementation provides full control over PSN values to prevent replay attacks while supporting multiple concurrent clients.
@@ -12,6 +14,14 @@ This project implements a secure RDMA (Remote Direct Memory Access) server-clien
 - **Shared Device Context**: Optimized resource usage with single device context
 - **Thread-Safe**: Verified concurrent client handling with stress testing
 - **Soft-RoCE Support**: Works with both hardware RDMA and software RDMA
+- **RDMA-RAG Integration**: Ultra-fast vector search for AI/LLM applications
+
+## Documentation & Demos
+
+Visit our **[GitHub Pages site](https://linjiw.github.io/rdma-multi-client/)** for:
+- 📊 [Performance Analysis](https://linjiw.github.io/rdma-multi-client/performance.html) - Interactive latency comparisons
+- 🔒 [Disconnection Protocol](https://linjiw.github.io/rdma-multi-client/disconnection.html) - Three-way handshake visualization
+- 🚀 [RDMA-RAG Demo](https://linjiw.github.io/rdma-multi-client/rdma-rag.html) - AI vector search acceleration
 
 ## Architecture
 
